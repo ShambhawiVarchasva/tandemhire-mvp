@@ -1,0 +1,9 @@
+backend/.venv
+backend/__pycache__
+backend/*.pyc
+backend/app/__pycache__
+frontend/node_modules
+backend/app/dev.db
+/data
+.env
+.env.local

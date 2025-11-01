@@ -1,0 +1,26 @@
+version: "3.8"
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: tandemhire_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./data:/app/dev_data
+    environment:
+      - DATABASE_URL=sqlite:///./dev.db
+      - UPLOAD_DIR=/tmp/tandemhire_uploads
+      - SECRET_KEY=dev-secret-key
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: tandemhire_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://host.docker.internal:8000
+    depends_on:
+      - backend
