@@ -1,34 +1,46 @@
 # backend/app/auth.py
-from datetime import datetime, timedelta
+from fastapi import APIRouter, HTTPException, Depends
+from sqlmodel import Session, select
 from passlib.context import CryptContext
-from jose import jwt, JWTError
-import os
-from typing import Optional
+from .db import get_session
+from .models import User
+from .schemas import UserCreate, LoginData
+from .auth_utils import create_access_token  # if you have JWT logic
 
-PWD_CTX = CryptContext(schemes=["bcrypt"], deprecated="auto")
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
+router = APIRouter()
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def hash_password(password: str) -> str:
-    return PWD_CTX.hash(password)
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return PWD_CTX.verify(plain, hashed)
+@router.post("/register")
+def register_user(user: UserCreate, session: Session = Depends(get_session)):
+    # ✅ Enforce bcrypt password length limit
+    if len(user.password.encode("utf-8")) > 72:
+        raise HTTPException(
+            status_code=400,
+            detail="Password too long. Please use 72 characters or fewer."
+        )
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    # Check for existing user
+    existing = session.exec(select(User).where(User.email == user.email)).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
 
-def decode_token(token: str):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except JWTError:
-        return None
+    # Hash password and save user
+    hashed_pw = pwd_context.hash(user.password)
+    db_user = User(email=user.email, password_hash=hashed_pw)
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
+    return {"message": "User created successfully", "email": db_user.email}
+
+
+@router.post("/login")
+def login_user(data: LoginData, session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.email == data.email)).first()
+    if not user or not pwd_context.verify(data.password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+
+    # (Optional) JWT token logic
+    token = create_access_token({"sub": user.email}) if "create_access_token" in globals() else "fake-token"
+    return {"message": "Login successful", "token": token, "email": user.email}
+
